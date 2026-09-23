@@ -1,0 +1,6 @@
+# Batch files must keep CRLF or cmd.exe can misparse them after a fresh clone.
+*.bat text eol=crlf
+*.sh  text eol=lf
+*.py  text eol=lf
+*.md  text eol=lf
+*.json text eol=lf

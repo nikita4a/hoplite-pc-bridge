@@ -1,0 +1,14 @@
+# ── hoplite-pc-bridge ──
+# Deny-all allowlist: nothing is committed unless named here.
+# This repo tunnels SHELL ACCESS to the public internet — a leaked
+# config.json or ngrok.yml is a remote-code-execution handover.
+*
+!.gitignore
+!README.md
+!.gitattributes
+!bridge.py
+!config.example.json
+!start_bridge.bat
+!test_bridge.py
+!stop_bridge.bat
+!verify_bridge.py

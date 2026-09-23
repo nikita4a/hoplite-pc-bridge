@@ -1,0 +1,38 @@
+{
+  "port": 8888,
+  "secret_path": "",
+  "api_key": "",
+
+  "_comment_secret": "secret_path is generated on first start and saved here. It IS the credential: the public URL is https://<domain>/<secret_path>. Rotate = change it, restart, update the URL in Hoplite.",
+  "_comment_api_key": "Optional. When set, mcp-proxy additionally requires an X-API-Key header — only useful if your MCP client can send custom headers.",
+  "_comment_paths": "Leave blank to auto-resolve from the global npm tree (APPDATA/npm/node_modules).",
+  "mcp_proxy_js": "",
+  "desktop_commander_js": "",
+  "ngrok_bin": "",
+
+  "_comment_ngrok": "config_path points at the agent config you downloaded from dashboard.ngrok.com; bridge.py reads ONLY authtoken and domain out of it (any config version) and never hands the file to ngrok. endpoint_name is kept for reference. Clear config_path to use domain+authtoken below, or clear everything for a random ngrok URL.",
+  "ngrok": {
+    "config_path": "ngrok.yml",
+    "endpoint_name": "llm-gateway",
+    "public_url": "",
+    "domain": "",
+    "authtoken": ""
+  },
+
+  "_comment_dc": "Merged into ~/.claude-server-commander/config.json (desktop-commander's real, SHARED config), preserving clientId/usageStats/limits. allowedDirectories gates FILE operations only — terminal commands still see the whole disk. Empty allowedDirectories = entire filesystem, so bridge.py refuses to start.",
+  "desktop_commander": {
+    "defaultShell": "cmd.exe",
+    "telemetryEnabled": false,
+    "allowedDirectories": [
+      "C:/path/to/your/workdir"
+    ],
+    "_comment_blocked": "Add blockedCommands here to impose a blocklist on this bridge. Omitted by default so the shared config of your other MCP clients is not changed. The list below is desktop-commander's own factory default — copy it in if you want it.",
+    "blockedCommands": [
+      "mkfs", "format", "mount", "umount", "fdisk", "dd", "parted", "diskpart",
+      "sudo", "su", "passwd", "adduser", "useradd", "usermod", "groupadd", "chsh", "visudo",
+      "shutdown", "reboot", "halt", "poweroff", "init",
+      "iptables", "firewall", "netsh",
+      "sfc", "bcdedit", "reg", "net", "sc", "runas", "cipher", "takeown"
+    ]
+  }
+}
