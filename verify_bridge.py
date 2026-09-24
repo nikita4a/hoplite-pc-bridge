@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 
 import bridge
@@ -19,7 +20,7 @@ STATUS = Path(__file__).resolve().parent / "status.json"
 CONFIG = Path(__file__).resolve().parent / "config.json"
 
 
-def prove_tools(url: str, cfg: dict, sid: str) -> bool:
+def prove_tools(url: str, cfg: dict, sid: str | None) -> bool:
     """Actually exercise tools over the public URL and probe the folder sandbox.
 
     tools/list only proves the tunnel is wired. This proves the cloud agent can
@@ -30,9 +31,20 @@ def prove_tools(url: str, cfg: dict, sid: str) -> bool:
     extra = {"X-API-Key": cfg["api_key"]} if cfg.get("api_key") else None
 
     def call_tool(req_id: int, name: str, arguments: dict) -> tuple[bool | None, str]:
-        st_, b_, _ = bridge.mcp_call(url, {
-            "jsonrpc": "2.0", "id": req_id, "method": "tools/call",
-            "params": {"name": name, "arguments": arguments}}, sid, extra, timeout=90)
+        """True = the tool ran, False = the server refused it, None = transport failed.
+
+        Conflating None with False once reported a dropped request as "sandbox is
+        gone" — a false security alarm. One retry absorbs transient tunnel drops.
+        """
+        st_, b_ = None, None
+        for attempt in (1, 2):
+            st_, b_, _ = bridge.mcp_call(url, {
+                "jsonrpc": "2.0", "id": req_id, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments}}, sid, extra, timeout=90)
+            if st_ == 200 and isinstance(b_, dict):
+                break
+            if attempt == 1:
+                time.sleep(2)
         if st_ != 200 or not isinstance(b_, dict):
             return None, f"HTTP {st_}: {str(b_)[:300]}"
         if "error" in b_:
@@ -45,8 +57,8 @@ def prove_tools(url: str, cfg: dict, sid: str) -> bool:
     ok = True
     if allowed:
         good, out = call_tool(2, "list_directory", {"path": allowed[0]})
-        print(f"[prove] list_directory {allowed[0]} -> "
-              f"{'OK' if good else 'FAIL'} ({len(out)} chars of listing)")
+        label = "OK" if good else ("TRANSPORT" if good is None else "REFUSED")
+        print(f"[prove] list_directory {allowed[0]} -> {label} ({len(out)} chars of listing)")
         if not good:
             print(f"        {out[:300]}")
             ok = False
@@ -66,10 +78,15 @@ def prove_tools(url: str, cfg: dict, sid: str) -> bool:
                   "check ~/.claude-server-commander/config.json")
     else:
         print(f"[prove] get_config FAIL -> {out[:300]}")
-    good, _ = call_tool(4, "read_file", {"path": "C:/Windows/win.ini"})
-    print("[prove] boundary read_file C:/Windows/win.ini -> "
-          + ("DENIED (folder sandbox holds for file ops)" if good is False
-             else "ALLOWED — allowedDirectories is NOT gating reads; treat the whole disk as shared"))
+    good, out = call_tool(4, "read_file", {"path": "C:/Windows/win.ini"})
+    if good is False:
+        print("[prove] boundary read_file C:/Windows/win.ini -> DENIED (folder sandbox holds)")
+    elif good is True:
+        print("[prove] boundary read_file C:/Windows/win.ini -> ALLOWED — allowedDirectories "
+              "is NOT gating reads; the whole disk is shared")
+        ok = False
+    else:
+        print(f"[prove] boundary read_file C:/Windows/win.ini -> INCONCLUSIVE (transport): {out[:140]}")
     marker = "BRIDGE-SHELL-OK"
     good, out = call_tool(5, "start_process",
                           {"command": f"echo {marker} && hostname", "timeout_ms": 20000})
@@ -97,10 +114,9 @@ def main() -> int:
           f"proxy_pid={status.get('proxy_pid')} ngrok_pid={status.get('ngrok_pid')}")
     print(f"started_at={status.get('started_at')} port={status.get('port')}")
     ok, sid = bridge.verify(url, cfg)
-    if ok and sid:
+    if ok:
+        # sid is None in stateless mode (mcp-proxy --stateless) — tools/call works without it.
         ok = prove_tools(url, cfg, sid)
-    elif ok:
-        print("[prove] skipped — server returned no Mcp-Session-Id")
     print("VERDICT:", "OK — public MCP endpoint is usable" if ok
           else "FAIL — public MCP endpoint is not usable")
     return 0 if ok else 1

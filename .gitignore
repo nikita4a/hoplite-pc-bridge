@@ -4,13 +4,23 @@
 # config.json or ngrok.yml is a remote-code-execution handover.
 *
 !.gitignore
-!README.md
-!GUIDE.md
 !.gitattributes
-!bridge.py
+!*.md
+!*.py
+!*.bat
 !config.example.json
-!start_bridge.bat
-!test_bridge.py
-!stop_bridge.bat
-!verify_bridge.py
-!status_all.py
+!docs/
+!tools/
+
+# ...but never caches, local state, or credentials — even inside allowlisted dirs
+__pycache__/
+*.pyc
+*.log
+status.json
+config.json
+ngrok.yml
+ngrok-agent.yml
+
+# subagent scratch — never publish
+_*
+tools/_*

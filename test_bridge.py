@@ -114,6 +114,63 @@ def test_merge_preserves_shared_state(target: Path) -> None:
         bridge.DC_CONFIG = original
 
 
+def test_ngrok_upstream_is_ipv4() -> None:
+    """A bare port makes ngrok dial "localhost:<port>", which on Windows resolves to
+    IPv6 [::1] first while mcp-proxy listens on 127.0.0.1 only. Observed live as
+    intermittent "failed to open private leg" in ngrok.log and RemoteDisconnected
+    on the client. The argv must pin IPv4.
+    """
+    captured = {}
+
+    def fake_popen(args, **kw):
+        captured["args"] = [str(a) for a in args]
+        raise FileNotFoundError("stub - never spawn a real tunnel")
+
+    orig_popen, orig_find = bridge.subprocess.Popen, bridge.find_ngrok
+    bridge.subprocess.Popen = fake_popen
+    bridge.find_ngrok = lambda cfg: "C:/fake/ngrok.exe"
+    try:
+        bridge.start_ngrok({"port": 8888, "ngrok": {}})
+    except (FileNotFoundError, SystemExit):
+        pass
+    finally:
+        bridge.subprocess.Popen, bridge.find_ngrok = orig_popen, orig_find
+
+    args = captured.get("args") or []
+    assert "127.0.0.1:8888" in args, f"upstream must be explicit IPv4, got {args}"
+    assert "8888" not in args, f"bare port would resolve to [::1] on Windows: {args}"
+
+
+def test_proxy_is_loopback_and_stateless() -> None:
+    """Loopback-only binding, stream-only server, stateless sessions.
+
+    Stateful mode kept one SSE stream per session alive for 30 min; successive runs
+    piled them up until the free ngrok tier started dropping connections.
+    """
+    captured = {}
+
+    def fake_popen(args, **kw):
+        captured["args"] = [str(a) for a in args]
+        raise FileNotFoundError("stub - never spawn a real proxy")
+
+    orig_popen = bridge.subprocess.Popen
+    bridge.subprocess.Popen = fake_popen
+    try:
+        bridge.start_proxy({"port": 8888, "secret_path": "mcp-test", "stateless": True})
+    except (FileNotFoundError, SystemExit):
+        pass
+    finally:
+        bridge.subprocess.Popen = orig_popen
+
+    args = captured.get("args") or []
+    assert args[args.index("--host") + 1] == "127.0.0.1", f"must bind loopback only: {args}"
+    assert "--stateless" in args, f"must be stateless: {args}"
+    assert args[args.index("--server") + 1] == "stream", f"no /sse leg: {args}"
+    assert "/mcp-test" in args, f"the secret path must be the stream endpoint: {args}"
+    assert args[args.index("--allowed-hosts") + 1] == "*", (
+        f"without this a Host-preserving tunnel (Cloudflare) gets a bare 404: {args}")
+
+
 def main() -> int:
     failures = 0
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -126,6 +183,8 @@ def main() -> int:
             ("parse_ngrok_yml missing file", lambda: test_parse_missing(tmp)),
             ("apply_dc_config preserves shared state",
              lambda: test_merge_preserves_shared_state(home / "config.json")),
+            ("ngrok upstream pinned to IPv4", test_ngrok_upstream_is_ipv4),
+            ("mcp-proxy loopback + stateless", test_proxy_is_loopback_and_stateless),
         ]
         for name, fn in cases:
             try:

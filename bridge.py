@@ -136,7 +136,19 @@ def start_proxy(cfg: dict) -> subprocess.Popen:
             "--port", str(cfg["port"]),
             "--server", "stream",              # no /sse endpoint to leave unauthenticated
             "--streamEndpoint", f"/{secret}",  # capability URL: the path IS the credential
-            "--corsAddAllowedHeader", "X-API-Key"]
+            "--corsAddAllowedHeader", "X-API-Key",
+            # mcp-proxy defaults --allowed-hosts to the address it bound to, so a tunnel
+            # that preserves the public Host header (Cloudflare) gets a bare 404 while one
+            # that rewrites it (ngrok) works. The proxy listens on loopback only and the
+            # URL path is the credential, so the Host check adds nothing here.
+            "--allowed-hosts", "*"]
+    if cfg.get("stateless", True):
+        # Stateless streamable HTTP: no Mcp-Session-Id, no persistent SSE stream per
+        # client. Stateful mode kept one stream alive per session for 30 minutes
+        # (--sessionIdleTimeout default) and every verify/agent run opened a new one;
+        # they piled up until the free ngrok tier started dropping connections
+        # (client-side RemoteDisconnected). Stateless removes the accumulation.
+        args += ["--stateless"]
     if cfg.get("api_key"):
         args += ["--apiKey", cfg["api_key"]]
     args += ["--", node, dc_js]
@@ -179,11 +191,26 @@ def start_ngrok(cfg: dict) -> subprocess.Popen:
         yml_token, yml_domain = parse_ngrok_yml(Path(cfg_path))
         token, domain = token or yml_token, domain or yml_domain
     token = token or os.environ.get("NGROK_AUTHTOKEN", "")
-    args = [ngrok, "http", str(cfg["port"]), "--log", "stdout", "--log-format", "json"]
+    # Explicit 127.0.0.1, NOT a bare port: a bare port makes ngrok dial
+    # "localhost:<port>", which on Windows resolves to IPv6 [::1] first while
+    # mcp-proxy listens on IPv4 only -> intermittent "failed to open private leg"
+    # and RemoteDisconnected on the client side.
+    # ngrok 3.39 has no --heartbeat-* CLI flags: they live in the agent config. With the
+    # default tolerance a short outbound hiccup terminates the session ("heartbeat timeout,
+    # terminating session") and every in-flight request dies with RemoteDisconnected while
+    # it reconnects. Observed live; 60s tolerance absorbs it.
+    ng = cfg["ngrok"]
+    lines = ['version: "3"', "agent:"]
+    if token:
+        lines.append(f"  authtoken: {token}")
+    lines += [f"  heartbeat_interval: {ng.get('heartbeat_interval', '20s')}",
+              f"  heartbeat_tolerance: {ng.get('heartbeat_tolerance', '60s')}",
+              "  log: stdout", "  log_format: json"]
+    agent_cfg = ROOT / "ngrok-agent.yml"     # contains the authtoken -> gitignored (deny-all)
+    agent_cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    args = [ngrok, "http", f"127.0.0.1:{cfg['port']}", "--config", str(agent_cfg)]
     if domain:
         args += ["--domain", domain]
-    if token:
-        args += ["--authtoken", token]
     log = (ROOT / "ngrok.log").open("ab", buffering=0)
     return subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
 
@@ -230,7 +257,6 @@ def mcp_call(url: str, payload: dict, session: str | None = None,
     """
     hdr = {"Content-Type": "application/json",
            "Accept": "application/json, text/event-stream",
-           "Connection": "close",                 # don't let the server hold the stream open
            "ngrok-skip-browser-warning": "1",     # bypass the ngrok free-tier interstitial
            "User-Agent": "hoplite-pc-bridge/1.0"}
     if session:

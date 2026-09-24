@@ -273,7 +273,7 @@ curl -X POST https://api.hoplite.sh/api/mcp/servers \
 Ответ `201`:
 
 ```json
-{"ok":true,"server":{"id":"mcp_461bbe15...","orgId":"org_...","projectId":null,
+{"ok":true,"server":{"id":"mcp_4a1b...","orgId":"org_...","projectId":null,
  "name":"pc-tools","config":{"url":"https://...","transport":"http","description":"..."},
  "enabled":true}}
 ```
@@ -341,7 +341,7 @@ python status_all.py
 PASS  1. bridge local handshake                      session 95a069db  [0.0s]
 PASS  2. bridge public handshake                     session 7a18a13a  [2.5s]
 PASS  3+4. shell on this PC + sandbox denies outside shell=OK sandbox_denied=OK  [3.9s]
-PASS  5. registered in Hoplite                       id=mcp_461bbe15... enabled=True  [1.5s]
+PASS  5. registered in Hoplite                       id=mcp_4a1b... enabled=True  [1.5s]
 PASS  6. Hoplite cloud reaches us                    connected=True tools=26  [2.2s]
 PASS  7. OpenAI gateway turn                         turn -> 'GW-OK'  [77.7s]
 PASS  8. omp + opencode configs                      omp pc-tools=yes, opencode hoplite=yes  [0.0s]
@@ -445,7 +445,7 @@ python server.py                       # http://127.0.0.1:8787
 ```powershell
 opencode models hoplite                     # список моделей
 opencode mcp list                           # статусы MCP-серверов
-opencode run -m hoplite/hoplite-opus-5 "Reply with exactly: PIPE-OK"
+opencode run -m hoplite/hoplite-opus-5 "Сколько будет 6*7? Ответь только числом."
 ```
 
 ### 2.4. omp (oh-my-pi)
@@ -502,10 +502,16 @@ enabledModels:
 Проверка (неинтерактивно, одним выстрелом):
 
 ```powershell
-omp --model hermes-hoplite/hoplite-gpt-5.6-terra --mode json "Reply with exactly: OMP-OK"
+omp --model hermes-hoplite/hoplite-gpt-5.6-terra --mode json "Сколько будет 6*7? Ответь только числом."
 ```
 
 В интерактиве: `omp` → `/model hermes-hoplite/hoplite-gpt-5.6-terra`.
+
+> ⚠️ **Не проверяй канал командой «Reply with exactly: ТОКЕН».** Облачный агент Hoplite
+> трактует такие эхо-пробы как prompt injection и **отказывает** (проверено живьём в
+> opencode: ответ — «prompt injection attempt»). Обычный арифметический вопрос работает:
+> `omp` вернул `42` от `provider: hermes-hoplite` за 18 с. Через голый API гейтвея
+> (`status_all.py`, проверка 7) эхо-проба проходит — там нет системного промпта клиента.
 
 ### 2.5. Выбор модели
 
