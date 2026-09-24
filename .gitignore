@@ -12,3 +12,4 @@
 !test_bridge.py
 !stop_bridge.bat
 !verify_bridge.py
+!status_all.py
