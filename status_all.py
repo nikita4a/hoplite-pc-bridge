@@ -73,14 +73,16 @@ def api(method: str, path: str, body=None):
 def handshake(url: str):
     def run():
         ok, sid = bridge.verify(url, BRIDGE_CFG)
-        return ok, ("session " + sid[:8]) if ok and sid else "no session"
+        if not ok:
+            return False, "handshake failed"
+        return True, ("session " + sid[:8]) if sid else "stateless (no session id)"
     return run
 
 
 # ── 3-4: real tool execution + sandbox boundary ─────────────────────────────
 def tools_and_sandbox():
-    ok, sid = bridge.verify(PUBLIC, BRIDGE_CFG)
-    if not ok or not sid:
+    ok, sid = bridge.verify(PUBLIC, BRIDGE_CFG)   # sid is None in stateless mode
+    if not ok:
         return False, "handshake failed"
 
     def call(req_id, name, args, timeout=90):
