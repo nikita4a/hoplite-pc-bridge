@@ -22,7 +22,8 @@ mcp-proxy  127.0.0.1:8888   ← слушает ТОЛЬКО loopback
 ```
 
 Обратное направление (Hoplite как **мозг** для локального opencode/OMP) живёт в
-соседнем `../hoplite-gateway/`. Эти два моста независимы и могут работать одновременно.
+[`nikita4a/hoplite-gateway`](https://github.com/nikita4a/hoplite-gateway). Эти два моста
+независимы и могут работать одновременно.
 
 ---
 
